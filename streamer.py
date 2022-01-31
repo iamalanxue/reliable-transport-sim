@@ -2,6 +2,7 @@
 from lossy_socket import LossyUDP
 # do not import anything else from socket except INADDR_ANY
 from socket import INADDR_ANY
+from struct import *
 
 
 class Streamer:
@@ -10,6 +11,8 @@ class Streamer:
         """Default values listen on all network interfaces, chooses a random source port,
            and does not introduce any simulated packet loss."""
         self.socket = LossyUDP()
+        self.recv_buffer = {} #creating an empty dictionary 
+        self.expected_sequence_number = 0
         self.socket.bind((src_ip, src_port))
         self.dst_ip = dst_ip
         self.dst_port = dst_port
@@ -35,7 +38,21 @@ class Streamer:
         # this sample code just calls the recvfrom method on the LossySocket
         data, addr = self.socket.recvfrom()
         # For now, I'll just pass the full UDP payload to the app
-        return data
+        unpacked = unpack('c'*len(data), data)
+        sequence_number = ''
+        for i in unpacked:
+            sequence_number += i.decode('utf-8')
+        sequence_number = int(sequence_number)
+        if sequence_number not in self.recv_buffer:
+            self.recv_buffer[sequence_number] = data
+        # else:
+        #     self.recv_buffer.update({sequence_number: data})
+        if self.expected_sequence_number in self.recv_buffer:
+            value = self.recv_buffer[self.expected_sequence_number]
+            self.expected_sequence_number += 1
+            return value
+        else:
+            return b''
 
     def close(self) -> None:
         """Cleans up. It should block (wait) until the Streamer is done with all
