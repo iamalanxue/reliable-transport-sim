@@ -48,9 +48,11 @@ class Streamer:
         # else:
         #     self.recv_buffer.update({sequence_number: data})
         if self.expected_sequence_number in self.recv_buffer:
-            value = self.recv_buffer[self.expected_sequence_number]
-            self.expected_sequence_number += 1
-            return value
+            value = b''
+            while(self.expected_sequence_number in self.recv_buffer):
+                value += self.recv_buffer[self.expected_sequence_number]
+                self.expected_sequence_number += 1
+            return value 
         else:
             return b''
 
