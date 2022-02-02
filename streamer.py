@@ -13,6 +13,7 @@ class Streamer:
         self.socket = LossyUDP()
         self.recv_buffer = {} #creating an empty dictionary 
         self.expected_sequence_number = 0
+        self.sequence_number = 0
         self.socket.bind((src_ip, src_port))
         self.dst_ip = dst_ip
         self.dst_port = dst_port
@@ -24,29 +25,25 @@ class Streamer:
         #https://www.geeksforgeeks.org/break-list-chunks-size-n-python/ 
         # Your code goes here!  The code below should be changed!
         chunks = list()
-        for i in range(0, len(data_bytes), 1472):
-            chunk = data_bytes[i:i+1472]
+        for i in range(0, len(data_bytes), 1470):
+            chunk = data_bytes[i:i+1470]
             chunks.append(chunk)
         # for now I'm just sending the raw application-level data in one UDP payload
         for chunk in chunks:
+            chunk = pack('H', self.sequence_number) + chunk
+            self.sequence_number += 1
             self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
 
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
         # your code goes here!  The code below should be changed!
-        
-        # this sample code just calls the recvfrom method on the LossySocket
         data, addr = self.socket.recvfrom()
-        # For now, I'll just pass the full UDP payload to the app
-        unpacked = unpack('c'*len(data), data)
-        sequence_number = ''
-        for i in unpacked:
-            sequence_number += i.decode('utf-8')
-        sequence_number = int(sequence_number)
-        if sequence_number not in self.recv_buffer:
-            self.recv_buffer[sequence_number] = data
-        # else:
-        #     self.recv_buffer.update({sequence_number: data})
+        print(data)
+        unpacked = unpack('H'+'c'*(len(data)-2), data)
+        sequence = unpacked[0]
+        if sequence not in self.recv_buffer:
+            self.recv_buffer[sequence] = data[2:]
+
         if self.expected_sequence_number in self.recv_buffer:
             value = b''
             while(self.expected_sequence_number in self.recv_buffer):
