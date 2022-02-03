@@ -31,17 +31,22 @@ class Streamer:
                 if(data != b''):
                     # Format: seq #, ack header, data)
                     unpacked = unpack('H'+'c'+'c'*(len(data)-3), data)
+                    #print(unpacked)
                     sequence = unpacked[0]
                     type = unpacked[1]
+                    if type == b'f': # if packet is FIN packet
+                        pass
                     if type == b'a': # if packet is ACK packet
                         self.acked[sequence] = True
+                        print(self.acked)
                         print("packet " + str(sequence) + " ACKED")
-                    else: # packet is data packet
+                    elif type == b'd': # packet is data packet
                         if sequence not in self.recv_buffer:
                             self.recv_buffer[sequence] = data[3:]
                             ack_seq = pack('H', sequence) + pack('c', b'a')
                             self.socket.sendto(ack_seq, (self.dst_ip, self.dst_port))
                             print("sending ACK for packet #" + str(sequence))
+                            #print(ack_seq)
             except Exception as e:
                 print("listener died!")
                 print(e)
@@ -57,12 +62,16 @@ class Streamer:
             chunk = data_bytes[i:i+1469]
             chunks.append(chunk)
         # for now I'm just sending the raw application-level data in one UDP payload
-        print("number of chunks in this transmission:" + str(len(chunks)))
         for chunk in chunks:
             chunk = pack('H', self.sequence_number) + pack('c', b'd') + chunk
             self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
             print("sent packet #" + str(self.sequence_number))
-            while self.sequence_number not in self.acked.keys(): time.sleep(0.01)
+            time.sleep(0.5)
+            while self.sequence_number not in self.acked:
+                self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
+                print("sent packet #" + str(self.sequence_number))
+                time.sleep(0.5)
+                
             self.sequence_number += 1
 
     def recv(self) -> bytes:
