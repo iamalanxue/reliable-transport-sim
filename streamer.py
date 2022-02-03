@@ -4,6 +4,7 @@ from lossy_socket import LossyUDP
 from socket import INADDR_ANY
 from struct import *
 from concurrent.futures import ThreadPoolExecutor
+import time
 
 class Streamer:
     def __init__(self, dst_ip, dst_port,
@@ -12,6 +13,7 @@ class Streamer:
            and does not introduce any simulated packet loss."""
         self.socket = LossyUDP()
         self.recv_buffer = {} #creating an empty dictionary 
+        self.acked = {}
         self.expected_sequence_number = 0
         self.sequence_number = 0
         self.closed = False
@@ -26,10 +28,17 @@ class Streamer:
             try:
                 data, addr = self.socket.recvfrom()
                 if(data != b''):
-                    unpacked = unpack('H'+'c'*(len(data)-2), data)
+                    # Format: seq #, ack header, data)
+                    unpacked = unpack('H'+'c'+'c'*(len(data)-3), data)
                     sequence = unpacked[0]
+                    type = unpacked[1]
+                    if type == b'a': # if ACK
+                        self.acked[sequence] = True
                     if sequence not in self.recv_buffer:
-                        self.recv_buffer[sequence] = data[2:]
+                        self.recv_buffer[sequence] = data[3:]
+                        ack_seq = pack('H', sequence) + pack('c', b'a')
+                        print(len(ack_seq))
+                        self.socket.sendto(ack_seq, (self.dst_ip, self.dst_port))
             except Exception as e:
                 print("listener died!")
                 print(e)
@@ -46,9 +55,10 @@ class Streamer:
             chunks.append(chunk)
         # for now I'm just sending the raw application-level data in one UDP payload
         for chunk in chunks:
-            chunk = pack('H', self.sequence_number) + chunk
-            self.sequence_number += 1
+            chunk = pack('H', self.sequence_number) + pack('c', b'd') + chunk
             self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
+            #while not self.acked[self.sequence_number]: time.sleep(0.01)
+            self.sequence_number += 1
 
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
