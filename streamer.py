@@ -3,7 +3,7 @@ from lossy_socket import LossyUDP
 # do not import anything else from socket except INADDR_ANY
 from socket import INADDR_ANY
 from struct import *
-
+from concurrent.futures import ThreadPoolExecutor
 
 class Streamer:
     def __init__(self, dst_ip, dst_port,
@@ -14,9 +14,25 @@ class Streamer:
         self.recv_buffer = {} #creating an empty dictionary 
         self.expected_sequence_number = 0
         self.sequence_number = 0
+        self.closed = False
         self.socket.bind((src_ip, src_port))
         self.dst_ip = dst_ip
         self.dst_port = dst_port
+        executor = ThreadPoolExecutor(max_workers=1)
+        executor.submit(self.listener)
+
+    def listener(self):
+        while not self.closed: # a later hint will explain self.closed
+            try:
+                data, addr = self.socket.recvfrom()
+                if(data != b''):
+                    unpacked = unpack('H'+'c'*(len(data)-2), data)
+                    sequence = unpacked[0]
+                    if sequence not in self.recv_buffer:
+                        self.recv_buffer[sequence] = data[2:]
+            except Exception as e:
+                print("listener died!")
+                print(e)
 
     def send(self, data_bytes: bytes) -> None:
         """Note that data_bytes can be larger than one packet."""
@@ -37,12 +53,11 @@ class Streamer:
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
         # your code goes here!  The code below should be changed!
-        data, addr = self.socket.recvfrom()
-        print(data)
-        unpacked = unpack('H'+'c'*(len(data)-2), data)
-        sequence = unpacked[0]
-        if sequence not in self.recv_buffer:
-            self.recv_buffer[sequence] = data[2:]
+        # data, addr = self.socket.recvfrom()
+        # unpacked = unpack('H'+'c'*(len(data)-2), data)
+        # sequence = unpacked[0]
+        # if sequence not in self.recv_buffer:
+        #     self.recv_buffer[sequence] = data[2:]
 
         if self.expected_sequence_number in self.recv_buffer:
             value = b''
@@ -57,4 +72,6 @@ class Streamer:
         """Cleans up. It should block (wait) until the Streamer is done with all
            the necessary ACKs and retransmissions"""
         # your code goes here, especially after you add ACKs and retransmissions.
-        pass
+        self.closed = True
+        self.socket.stoprecv()
+        return
