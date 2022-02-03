@@ -1,4 +1,5 @@
 # do not import anything else from loss_socket besides LossyUDP
+from ssl import ALERT_DESCRIPTION_CERTIFICATE_REVOKED
 from lossy_socket import LossyUDP
 # do not import anything else from socket except INADDR_ANY
 from socket import INADDR_ANY
@@ -13,7 +14,7 @@ class Streamer:
            and does not introduce any simulated packet loss."""
         self.socket = LossyUDP()
         self.recv_buffer = {} #creating an empty dictionary 
-        self.acked = False
+        self.acked = {}
         self.expected_sequence_number = 0
         self.sequence_number = 0
         self.closed = False
@@ -33,11 +34,13 @@ class Streamer:
                     sequence = unpacked[0]
                     type = unpacked[1]
                     if type == b'a': # if packet is ACK packet
-                        self.acked = True
+                        print("packet " + str(sequence) + " ACKED")
+                        self.acked[sequence] = True
                     else: # packet is data packet
                         if sequence not in self.recv_buffer:
                             self.recv_buffer[sequence] = data[3:]
                             ack_seq = pack('H', sequence) + pack('c', b'a')
+                            print("sending ACK for packet #" + str(sequence))
                             self.socket.sendto(ack_seq, (self.dst_ip, self.dst_port))
             except Exception as e:
                 print("listener died!")
@@ -54,10 +57,12 @@ class Streamer:
             chunk = data_bytes[i:i+1469]
             chunks.append(chunk)
         # for now I'm just sending the raw application-level data in one UDP payload
+        print("length of chunk sent:" + str(len(chunks)))
         for chunk in chunks:
+            print("sending packet #" + str(self.sequence_number))
             chunk = pack('H', self.sequence_number) + pack('c', b'd') + chunk
             self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
-            while not self.acked: time.sleep(0.01)
+            while self.sequence_number not in self.acked.keys(): time.sleep(0.01)
             self.sequence_number += 1
 
     def recv(self) -> bytes:
