@@ -31,18 +31,17 @@ class Streamer:
                 if(data != b''):
                     # Format: seq #, ack header, data)
                     unpacked = unpack('H'+'c'+'c'*(len(data)-3), data)
-                    print(unpacked)
                     sequence = unpacked[0]
                     type = unpacked[1]
                     if type == b'a': # if packet is ACK packet
-                        print("packet " + str(sequence) + " ACKED")
                         self.acked[sequence] = True
+                        print("packet " + str(sequence) + " ACKED")
                     else: # packet is data packet
                         if sequence not in self.recv_buffer:
                             self.recv_buffer[sequence] = data[3:]
                             ack_seq = pack('H', sequence) + pack('c', b'a')
-                            print("sending ACK for packet #" + str(sequence))
                             self.socket.sendto(ack_seq, (self.dst_ip, self.dst_port))
+                            print("sending ACK for packet #" + str(sequence))
             except Exception as e:
                 print("listener died!")
                 print(e)
@@ -60,9 +59,9 @@ class Streamer:
         # for now I'm just sending the raw application-level data in one UDP payload
         print("number of chunks in this transmission:" + str(len(chunks)))
         for chunk in chunks:
-            print("sending packet #" + str(self.sequence_number))
             chunk = pack('H', self.sequence_number) + pack('c', b'd') + chunk
             self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
+            print("sent packet #" + str(self.sequence_number))
             while self.sequence_number not in self.acked.keys(): time.sleep(0.01)
             self.sequence_number += 1
 
@@ -88,6 +87,9 @@ class Streamer:
         """Cleans up. It should block (wait) until the Streamer is done with all
            the necessary ACKs and retransmissions"""
         # your code goes here, especially after you add ACKs and retransmissions.
+        
+        # I need this or else it seems the ACK wasn't actually getting sent in time before the socket closed on me
+        time.sleep(2)
         self.closed = True
         self.socket.stoprecv()
         return
