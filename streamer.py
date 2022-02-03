@@ -31,6 +31,7 @@ class Streamer:
                 if(data != b''):
                     # Format: seq #, ack header, data)
                     unpacked = unpack('H'+'c'+'c'*(len(data)-3), data)
+                    print(unpacked)
                     sequence = unpacked[0]
                     type = unpacked[1]
                     if type == b'a': # if packet is ACK packet
@@ -57,7 +58,7 @@ class Streamer:
             chunk = data_bytes[i:i+1469]
             chunks.append(chunk)
         # for now I'm just sending the raw application-level data in one UDP payload
-        print("length of chunk sent:" + str(len(chunks)))
+        print("number of chunks in this transmission:" + str(len(chunks)))
         for chunk in chunks:
             print("sending packet #" + str(self.sequence_number))
             chunk = pack('H', self.sequence_number) + pack('c', b'd') + chunk

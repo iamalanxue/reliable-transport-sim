@@ -2,8 +2,9 @@ from streamer import Streamer
 import sys
 import lossy_socket
 
-NUMS=1000
-#NUMS=100
+#NUMS=1000
+NUMS=50
+#NUMS=350
 
 
 def receive(s):
@@ -11,7 +12,7 @@ def receive(s):
     str_buf = ""
     while expected < NUMS:
         data = s.recv()
-        print("recv returned {%s}" % data.decode('utf-8'))
+        #print("recv returned {%s}" % data.decode('utf-8'))
         str_buf += data.decode('utf-8')
         for t in str_buf.split(" "):
             if len(t) == 0:
