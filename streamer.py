@@ -43,9 +43,9 @@ class Streamer:
                     elif type == b'd': # packet is data packet
                         if sequence not in self.recv_buffer:
                             self.recv_buffer[sequence] = data[3:]
-                            ack_seq = pack('H', sequence) + pack('c', b'a')
-                            self.socket.sendto(ack_seq, (self.dst_ip, self.dst_port))
-                            print("sending ACK for packet #" + str(sequence))
+                        ack_seq = pack('H', sequence) + pack('c', b'a')
+                        self.socket.sendto(ack_seq, (self.dst_ip, self.dst_port))
+                        print("sending ACK for packet #" + str(sequence))
                             #print(ack_seq)
             except Exception as e:
                 print("listener died!")
@@ -70,7 +70,7 @@ class Streamer:
             while self.sequence_number not in self.acked:
                 self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
                 print("sent packet #" + str(self.sequence_number))
-                time.sleep(0.5)
+                time.sleep(0.25)
                 
             self.sequence_number += 1
 
