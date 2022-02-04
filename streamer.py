@@ -15,6 +15,7 @@ class Streamer:
         self.socket = LossyUDP()
         self.recv_buffer = {} #creating an empty dictionary 
         self.acked = {}
+        self.finack = False
         self.expected_sequence_number = 0
         self.sequence_number = 0
         self.closed = False
@@ -31,14 +32,15 @@ class Streamer:
                 if(data != b''):
                     # Format: seq #, ack header, data)
                     unpacked = unpack('H'+'c'+'c'*(len(data)-3), data)
-                    #print(unpacked)
                     sequence = unpacked[0]
                     type = unpacked[1]
                     if type == b'f': # if packet is FIN packet
-                        pass
-                    if type == b'a': # if packet is ACK packet
+                        finack_seq = pack('H', 0) + pack('c', b'g')
+                        self.socket.sendto(finack_seq, (self.dst_ip, self.dst_port))
+                    elif type == b'g': # if packet is FINACK packet
+                        self.finack = True
+                    elif type == b'a': # if packet is ACK packet
                         self.acked[sequence] = True
-                        print(self.acked)
                         print("packet " + str(sequence) + " ACKED")
                     elif type == b'd': # packet is data packet
                         if sequence not in self.recv_buffer:
@@ -46,7 +48,6 @@ class Streamer:
                         ack_seq = pack('H', sequence) + pack('c', b'a')
                         self.socket.sendto(ack_seq, (self.dst_ip, self.dst_port))
                         print("sending ACK for packet #" + str(sequence))
-                            #print(ack_seq)
             except Exception as e:
                 print("listener died!")
                 print(e)
@@ -66,7 +67,7 @@ class Streamer:
             chunk = pack('H', self.sequence_number) + pack('c', b'd') + chunk
             self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
             print("sent packet #" + str(self.sequence_number))
-            time.sleep(0.5)
+            time.sleep(0.25)
             while self.sequence_number not in self.acked:
                 self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
                 print("sent packet #" + str(self.sequence_number))
@@ -77,12 +78,7 @@ class Streamer:
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
         # your code goes here!  The code below should be changed!
-        # data, addr = self.socket.recvfrom()
-        # unpacked = unpack('H'+'c'*(len(data)-2), data)
-        # sequence = unpacked[0]
-        # if sequence not in self.recv_buffer:
-        #     self.recv_buffer[sequence] = data[2:]
-
+        
         if self.expected_sequence_number in self.recv_buffer:
             value = b''
             while(self.expected_sequence_number in self.recv_buffer):
@@ -98,6 +94,14 @@ class Streamer:
         # your code goes here, especially after you add ACKs and retransmissions.
         
         # I need this or else it seems the ACK wasn't actually getting sent in time before the socket closed on me
+        fin_seq = pack('H', 0) + pack('c', b'f')
+        self.socket.sendto(fin_seq, (self.dst_ip, self.dst_port))
+        print("sending FIN")
+        time.sleep(0.25)
+        while self.finack != True:
+            self.socket.sendto(fin_seq, (self.dst_ip, self.dst_port))
+            print("sending FIN")
+            time.sleep(0.25)
         time.sleep(2)
         self.closed = True
         self.socket.stoprecv()
