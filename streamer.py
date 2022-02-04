@@ -5,7 +5,9 @@ from lossy_socket import LossyUDP
 from socket import INADDR_ANY
 from struct import *
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import time
+
 
 class Streamer:
     def __init__(self, dst_ip, dst_port,
@@ -29,42 +31,48 @@ class Streamer:
         while not self.closed: # a later hint will explain self.closed
             try:
                 data, addr = self.socket.recvfrom()
-                if(data != b''):
+                if(len(data) > 0):
                     # Format: seq #, ack header, data)
-                    unpacked = unpack('H'+'c'+'c'*(len(data)-3), data)
+                    unpacked = unpack('H'+'c'+'32s'+'c'*(len(data)-35), data)
                     sequence = unpacked[0]
-                    type = unpacked[1]
-                    if type == b'f': # if packet is FIN packet
-                        finack_seq = pack('H', 0) + pack('c', b'g')
-                        self.socket.sendto(finack_seq, (self.dst_ip, self.dst_port))
-                    elif type == b'g': # if packet is FINACK packet
-                        self.finack = True
-                    elif type == b'a': # if packet is ACK packet
-                        self.acked[sequence] = True
-                        print("packet " + str(sequence) + " ACKED")
-                    elif type == b'd': # packet is data packet
-                        if sequence not in self.recv_buffer:
-                            self.recv_buffer[sequence] = data[3:]
-                        ack_seq = pack('H', sequence) + pack('c', b'a')
-                        self.socket.sendto(ack_seq, (self.dst_ip, self.dst_port))
-                        print("sending ACK for packet #" + str(sequence))
+                    packet_type = unpacked[1]
+                    hash = unpacked[2]
+                    packet_data = data[35:]
+                    hash_check = hashlib.md5(str(sequence).encode() + packet_type + packet_data).hexdigest()
+                    if hash_check.encode() == hash:
+                        if packet_type == b'f': # if packet is FIN packet
+                            finack_hash = hashlib.md5(str(0).encode() + b'g').hexdigest()
+                            finack_seq = pack('H', 0) + pack('c', b'g') + pack('32s', finack_hash.encode())
+                            self.socket.sendto(finack_seq, (self.dst_ip, self.dst_port))
+                        elif packet_type == b'g': # if packet is FINACK packet
+                            self.finack = True
+                        elif packet_type == b'a': # if packet is ACK packet
+                            self.acked[sequence] = True
+                            print("packet " + str(sequence) + " ACKED")
+                        elif packet_type == b'd': # packet is data packet
+                            if sequence not in self.recv_buffer:
+                                self.recv_buffer[sequence] = data[35:]
+                            ack_hash = hashlib.md5(str(sequence).encode() + b'a').hexdigest()
+                            ack_seq = pack('H', sequence) + pack('c', b'a') + pack('32s', ack_hash.encode())
+                            self.socket.sendto(ack_seq, (self.dst_ip, self.dst_port))
+                            print("sending ACK for packet #" + str(sequence))
+                    else:
+                        print("Corrupted packet received")
             except Exception as e:
                 print("listener died!")
                 print(e)
 
     def send(self, data_bytes: bytes) -> None:
         """Note that data_bytes can be larger than one packet."""
-        #links to the code i looked at the write this function 
-        #https://stackoverflow.com/questions/13517246/python-sockets-sending-string-in-chunks-of-10-bytes
-        #https://www.geeksforgeeks.org/break-list-chunks-size-n-python/ 
         # Your code goes here!  The code below should be changed!
         chunks = list()
-        for i in range(0, len(data_bytes), 1469):
-            chunk = data_bytes[i:i+1469]
+        for i in range(0, len(data_bytes), 1437):
+            chunk = data_bytes[i:i+1437]
             chunks.append(chunk)
         # for now I'm just sending the raw application-level data in one UDP payload
         for chunk in chunks:
-            chunk = pack('H', self.sequence_number) + pack('c', b'd') + chunk
+            hash = hashlib.md5(str(self.sequence_number).encode() + b'd' + chunk).hexdigest()
+            chunk = pack('H', self.sequence_number) + pack('c', b'd') + pack('32s', hash.encode()) + chunk
             self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
             print("sent packet #" + str(self.sequence_number))
             time.sleep(0.25)
@@ -94,7 +102,8 @@ class Streamer:
         # your code goes here, especially after you add ACKs and retransmissions.
         
         # I need this or else it seems the ACK wasn't actually getting sent in time before the socket closed on me
-        fin_seq = pack('H', 0) + pack('c', b'f')
+        fin_hash = hashlib.md5(str(0).encode() + b'f').hexdigest()
+        fin_seq = pack('H', 0) + pack('c', b'f') + pack('32s', fin_hash.encode())
         self.socket.sendto(fin_seq, (self.dst_ip, self.dst_port))
         print("sending FIN")
         time.sleep(0.25)
