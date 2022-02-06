@@ -1,5 +1,6 @@
 # do not import anything else from loss_socket besides LossyUDP
 from ssl import ALERT_DESCRIPTION_CERTIFICATE_REVOKED
+from threading import Timer
 from lossy_socket import LossyUDP
 # do not import anything else from socket except INADDR_ANY
 from socket import INADDR_ANY
@@ -24,8 +25,17 @@ class Streamer:
         self.socket.bind((src_ip, src_port))
         self.dst_ip = dst_ip
         self.dst_port = dst_port
+        #variables for sender
+        self.send_base = 0
+        self.send_buffer = {}
+        #variables for receiver
+        self.last_recv_seq = -1
+
         executor = ThreadPoolExecutor(max_workers=1)
         executor.submit(self.listener)
+
+        self.t = Timer(0.5, self.check_timeout)
+        self.t.start()
 
     def listener(self):
         while not self.closed: # a later hint will explain self.closed
@@ -48,41 +58,64 @@ class Streamer:
                             self.finack = True
                         elif packet_type == b'a': # if packet is ACK packet
                             self.acked[sequence] = True
+                            self.t.cancel()
+                            self.send_base = sequence + 1
+                            self.t.start()
                             print("packet " + str(sequence) + " ACKED")
                         elif packet_type == b'd': # packet is data packet
-                            if sequence not in self.recv_buffer:
+                            #if sequence not in self.recv_buffer:
+                            #    self.recv_buffer[sequence] = data[35:]
+                            #ack_hash = hashlib.md5(str(sequence).encode() + b'a').hexdigest()
+                            #ack_seq = pack('H', sequence) + pack('c', b'a') + pack('32s', ack_hash.encode())
+                            #self.socket.sendto(ack_seq, (self.dst_ip, self.dst_port))
+                            #print("sending ACK for packet #" + str(sequence))
+                            if sequence == self.last_recv_seq + 1:
                                 self.recv_buffer[sequence] = data[35:]
-                            ack_hash = hashlib.md5(str(sequence).encode() + b'a').hexdigest()
-                            ack_seq = pack('H', sequence) + pack('c', b'a') + pack('32s', ack_hash.encode())
-                            self.socket.sendto(ack_seq, (self.dst_ip, self.dst_port))
-                            print("sending ACK for packet #" + str(sequence))
+                                ack_hash = hashlib.md5(str(sequence).encode() + b'a').hexdigest()
+                                ack_seq = pack('H', sequence) + pack('c', b'a') + pack('32s', ack_hash.encode())
+                                self.socket.sendto(ack_seq, (self.dst_ip, self.dst_port))
+                                self.last_recv_seq = sequence
+                                print("sending ACK for packet #" + str(sequence))
+                            else:
+                                print("out of order packet received, dropping packet #" + str(sequence))
+                                ack_hash = hashlib.md5(str(self.last_recv_seq).encode() + b'a').hexdigest()
+                                ack_seq = pack('H', self.last_recv_seq) + pack('c', b'a') + pack('32s', ack_hash.encode())
+                                self.socket.sendto(ack_seq, (self.dst_ip, self.dst_port))
+                                print("sending ACK for last recieved packet #" + str(self.last_recv_seq))
                     else:
                         print("Corrupted packet received")
             except Exception as e:
                 print("listener died!")
                 print(e)
 
+    def check_timeout(self):
+        if self.send_base not in self.acked:
+            self.sequence_number = self.send_base
+        self.send_packet()
+
+    def send_packet(self):
+        while True:
+            if self.sequence_number in self.send_buffer:
+                hash = hashlib.md5(str(self.sequence_number).encode() + b'd' + self.send_buffer[self.sequence_number]).hexdigest()
+                chunk = pack('H', self.sequence_number) + pack('c', b'd') + pack('32s', hash.encode()) + self.send_buffer[self.sequence_number]
+                self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
+                print("sent packet #" + str(self.sequence_number))
+                self.sequence_number = self.sequence_number + 1
+            else:
+                break
+
     def send(self, data_bytes: bytes) -> None:
         """Note that data_bytes can be larger than one packet."""
         # Your code goes here!  The code below should be changed!
         chunks = list()
+        nextchunk = self.sequence_number
         for i in range(0, len(data_bytes), 1437):
             chunk = data_bytes[i:i+1437]
             chunks.append(chunk)
-        # for now I'm just sending the raw application-level data in one UDP payload
-        for chunk in chunks:
-            hash = hashlib.md5(str(self.sequence_number).encode() + b'd' + chunk).hexdigest()
-            chunk = pack('H', self.sequence_number) + pack('c', b'd') + pack('32s', hash.encode()) + chunk
-            self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
-            print("sent packet #" + str(self.sequence_number))
-            time.sleep(0.25)
-            while self.sequence_number not in self.acked:
-                self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
-                print("sent packet #" + str(self.sequence_number))
-                time.sleep(0.25)
+            self.send_buffer[nextchunk] = chunk
+            nextchunk = nextchunk + 1
+        self.send_packet()
                 
-            self.sequence_number += 1
-
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
         # your code goes here!  The code below should be changed!
