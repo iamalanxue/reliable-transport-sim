@@ -35,7 +35,7 @@ class Streamer:
         executor.submit(self.listener)
 
         self.lock = Lock()
-        self.t = Timer(0.25, self.check_timeout)
+        self.t = Timer(0.5, self.check_timeout)
         self.t.start()
 
     def listener(self):
@@ -80,7 +80,6 @@ class Streamer:
                                 ack_hash = hashlib.md5(str(self.last_recv_seq).encode() + b'a').hexdigest()
                                 ack_seq = pack('H', self.last_recv_seq) + pack('c', b'a') + pack('32s', ack_hash.encode())
                                 self.socket.sendto(ack_seq, (self.dst_ip, self.dst_port))
-                                print("sending ACK for last recieved packet #" + str(self.last_recv_seq))
                     else:
                         print("Corrupted packet received")
             except Exception as e:
@@ -91,18 +90,18 @@ class Streamer:
         if self.send_base not in self.acked:
             print("go and back resending from packet: " + str(self.send_base))
             self.sequence_number = self.send_base
-        t1 = Timer(0.25, self.check_timeout)
-        t1.start()
-        self.send_packet()
-        
+        if self.finack == False:
+            t1 = Timer(0.5, self.check_timeout)
+            t1.start()
+            self.send_packet()
 
     def send_packet(self):
         while True:
             if self.sequence_number in self.send_buffer:
-                print(self.send_buffer)
                 hash = hashlib.md5(str(self.sequence_number).encode() + b'd' + self.send_buffer[self.sequence_number]).hexdigest()
                 chunk = pack('H', self.sequence_number) + pack('c', b'd') + pack('32s', hash.encode()) + self.send_buffer[self.sequence_number]
                 self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
+                print("sending packet # " + str(self.sequence_number))
                 self.sequence_number = self.sequence_number + 1
             else:
                 break
