@@ -14,7 +14,6 @@ class RepeatTimer(Timer):
     def run(self):
         while not self.finished.wait(self.interval):
             self.function(*self.args, **self.kwargs)
-        print('Done')
 
 
 class Streamer:
@@ -88,11 +87,9 @@ class Streamer:
             a_timer = RepeatTimer(.25, self.timer_got_timeout, [self.sequence_number])
             self.timers[self.sequence_number] = a_timer #storing my timer in a dictionary 
             a_timer.start()
-            # while self.sequence_number not in self.acked:
-            #     self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
-            #     print("sent packet #" + str(self.sequence_number))
-            #     time.sleep(0.25)
+            print(self.timers)
             self.sequence_number += 1
+        time.sleep(.35) #cant solve race condition 
 
     def timer_got_timeout(self, sequence_number):
         # while sequence_number not in self.acked:

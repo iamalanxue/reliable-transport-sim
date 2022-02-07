@@ -3,7 +3,7 @@ import sys
 import lossy_socket
 
 #NUMS=1000
-NUMS=100
+NUMS=300
 
 
 def receive(s):
