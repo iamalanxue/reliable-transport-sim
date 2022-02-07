@@ -7,6 +7,14 @@ from struct import *
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import time
+from threading import Timer
+
+#interval timer 
+class RepeatTimer(Timer):
+    def run(self):
+        while not self.finished.wait(self.interval):
+            self.function(*self.args, **self.kwargs)
+        print('Done')
 
 
 class Streamer:
@@ -21,6 +29,8 @@ class Streamer:
         self.expected_sequence_number = 0
         self.sequence_number = 0
         self.closed = False
+        self.timers = {}
+        self.waiting_for_ack = {}
         self.socket.bind((src_ip, src_port))
         self.dst_ip = dst_ip
         self.dst_port = dst_port
@@ -69,19 +79,32 @@ class Streamer:
         for i in range(0, len(data_bytes), 1437):
             chunk = data_bytes[i:i+1437]
             chunks.append(chunk)
-        # for now I'm just sending the raw application-level data in one UDP payload
         for chunk in chunks:
             hash = hashlib.md5(str(self.sequence_number).encode() + b'd' + chunk).hexdigest()
             chunk = pack('H', self.sequence_number) + pack('c', b'd') + pack('32s', hash.encode()) + chunk
-            self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
-            print("sent packet #" + str(self.sequence_number))
-            time.sleep(0.25)
-            while self.sequence_number not in self.acked:
-                self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
-                print("sent packet #" + str(self.sequence_number))
-                time.sleep(0.25)
-                
+            self.socket.sendto(chunk, (self.dst_ip, self.dst_port)) #sending a packet for the first time 
+
+            self.waiting_for_ack[self.sequence_number] = chunk #i need to save this chunk in case it gets lost so i can resend it using timers 
+            a_timer = RepeatTimer(.25, self.timer_got_timeout, [self.sequence_number])
+            self.timers[self.sequence_number] = a_timer #storing my timer in a dictionary 
+            a_timer.start()
+            # while self.sequence_number not in self.acked:
+            #     self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
+            #     print("sent packet #" + str(self.sequence_number))
+            #     time.sleep(0.25)
             self.sequence_number += 1
+
+    def timer_got_timeout(self, sequence_number):
+        # while sequence_number not in self.acked:
+        #     self.socket.sendto(self.waiting_for_ack[sequence_number], (self.dst_ip, self.dst_port))
+        #     time.sleep(0.25)
+        # self.timers[sequence_number].cancel()
+        if(sequence_number in self.acked):
+            a = self.timers[sequence_number]
+            a.cancel()
+            del self.timers[sequence_number] #delete the timer from dictionary of timers
+        else:
+            self.socket.sendto(self.waiting_for_ack[sequence_number], (self.dst_ip, self.dst_port))
 
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
