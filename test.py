@@ -3,7 +3,8 @@ import sys
 import lossy_socket
 
 #NUMS=1000
-NUMS=100
+#NUMS=100
+NUMS=25
 
 
 def receive(s):
@@ -64,8 +65,8 @@ def host2(listen_port, remote_port):
 
 
 def main():
-    lossy_socket.sim = lossy_socket.SimulationParams(loss_rate=0.1, corruption_rate=0.1,
-                                                     max_delivery_delay=0.1,
+    lossy_socket.sim = lossy_socket.SimulationParams(loss_rate=0.0, corruption_rate=0.1,
+                                                     max_delivery_delay=0.0,
                                                      become_reliable_after=100000.0)
 
     if len(sys.argv) < 4:

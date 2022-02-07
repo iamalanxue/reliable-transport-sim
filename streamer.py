@@ -1,6 +1,6 @@
 # do not import anything else from loss_socket besides LossyUDP
 from ssl import ALERT_DESCRIPTION_CERTIFICATE_REVOKED
-from threading import Timer
+from threading import *
 from lossy_socket import LossyUDP
 # do not import anything else from socket except INADDR_ANY
 from socket import INADDR_ANY
@@ -34,7 +34,8 @@ class Streamer:
         executor = ThreadPoolExecutor(max_workers=1)
         executor.submit(self.listener)
 
-        self.t = Timer(0.5, self.check_timeout)
+        self.lock = Lock()
+        self.t = Timer(0.25, self.check_timeout)
         self.t.start()
 
     def listener(self):
@@ -58,9 +59,7 @@ class Streamer:
                             self.finack = True
                         elif packet_type == b'a': # if packet is ACK packet
                             self.acked[sequence] = True
-                            self.t.cancel()
                             self.send_base = sequence + 1
-                            self.t.start()
                             print("packet " + str(sequence) + " ACKED")
                         elif packet_type == b'd': # packet is data packet
                             #if sequence not in self.recv_buffer:
@@ -90,16 +89,20 @@ class Streamer:
 
     def check_timeout(self):
         if self.send_base not in self.acked:
+            print("go and back resending from packet: " + str(self.send_base))
             self.sequence_number = self.send_base
+        t1 = Timer(0.25, self.check_timeout)
+        t1.start()
         self.send_packet()
+        
 
     def send_packet(self):
         while True:
             if self.sequence_number in self.send_buffer:
+                print(self.send_buffer)
                 hash = hashlib.md5(str(self.sequence_number).encode() + b'd' + self.send_buffer[self.sequence_number]).hexdigest()
                 chunk = pack('H', self.sequence_number) + pack('c', b'd') + pack('32s', hash.encode()) + self.send_buffer[self.sequence_number]
                 self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
-                print("sent packet #" + str(self.sequence_number))
                 self.sequence_number = self.sequence_number + 1
             else:
                 break
@@ -134,7 +137,6 @@ class Streamer:
            the necessary ACKs and retransmissions"""
         # your code goes here, especially after you add ACKs and retransmissions.
         
-        # I need this or else it seems the ACK wasn't actually getting sent in time before the socket closed on me
         fin_hash = hashlib.md5(str(0).encode() + b'f').hexdigest()
         fin_seq = pack('H', 0) + pack('c', b'f') + pack('32s', fin_hash.encode())
         self.socket.sendto(fin_seq, (self.dst_ip, self.dst_port))
