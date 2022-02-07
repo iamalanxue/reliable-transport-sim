@@ -35,7 +35,7 @@ class Streamer:
         executor.submit(self.listener)
 
         self.lock = Lock()
-        self.t = Timer(0.5, self.check_timeout)
+        self.t = Timer(0.25, self.check_timeout)
         self.t.start()
 
     def listener(self):
@@ -87,13 +87,14 @@ class Streamer:
                 print(e)
 
     def check_timeout(self):
-        if self.send_base not in self.acked:
-            print("go and back resending from packet: " + str(self.send_base))
-            self.sequence_number = self.send_base
-        if self.finack == False:
-            t1 = Timer(0.5, self.check_timeout)
-            t1.start()
-            self.send_packet()
+        with self.lock:
+            if self.send_base not in self.acked:
+                print("go and back resending from packet: " + str(self.send_base))
+                self.sequence_number = self.send_base
+            if self.finack == False:
+                t1 = Timer(0.25, self.check_timeout)
+                t1.start()
+                self.send_packet()
 
     def send_packet(self):
         while True:
@@ -103,33 +104,35 @@ class Streamer:
                 self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
                 print("sending packet # " + str(self.sequence_number))
                 self.sequence_number = self.sequence_number + 1
+                time.sleep(0.05)
             else:
                 break
 
     def send(self, data_bytes: bytes) -> None:
         """Note that data_bytes can be larger than one packet."""
         # Your code goes here!  The code below should be changed!
-        chunks = list()
-        nextchunk = self.sequence_number
-        for i in range(0, len(data_bytes), 1437):
-            chunk = data_bytes[i:i+1437]
-            chunks.append(chunk)
-            self.send_buffer[nextchunk] = chunk
-            nextchunk = nextchunk + 1
-        self.send_packet()
+        with self.lock:
+            chunks = list()
+            nextchunk = self.sequence_number
+            for i in range(0, len(data_bytes), 1437):
+                chunk = data_bytes[i:i+1437]
+                chunks.append(chunk)
+                self.send_buffer[nextchunk] = chunk
+                nextchunk = nextchunk + 1
+            self.send_packet()
                 
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
         # your code goes here!  The code below should be changed!
-        
-        if self.expected_sequence_number in self.recv_buffer:
-            value = b''
-            while(self.expected_sequence_number in self.recv_buffer):
-                value += self.recv_buffer[self.expected_sequence_number]
-                self.expected_sequence_number += 1
-            return value 
-        else:
-            return b''
+        with self.lock:
+            if self.expected_sequence_number in self.recv_buffer:
+                value = b''
+                while(self.expected_sequence_number in self.recv_buffer):
+                    value += self.recv_buffer[self.expected_sequence_number]
+                    self.expected_sequence_number += 1
+                return value 
+            else:
+                return b''
 
     def close(self) -> None:
         """Cleans up. It should block (wait) until the Streamer is done with all
