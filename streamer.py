@@ -35,7 +35,7 @@ class Streamer:
         executor.submit(self.listener)
 
         self.lock = Lock()
-        self.t = Timer(0.25, self.check_timeout)
+        self.t = Timer(1, self.check_timeout)
         self.t.start()
 
     def listener(self):
@@ -92,7 +92,7 @@ class Streamer:
                 print("go and back resending from packet: " + str(self.send_base))
                 self.sequence_number = self.send_base
             if self.finack == False:
-                t1 = Timer(0.25, self.check_timeout)
+                t1 = Timer(1, self.check_timeout)
                 t1.start()
                 self.send_packet()
 
@@ -104,7 +104,7 @@ class Streamer:
                 self.socket.sendto(chunk, (self.dst_ip, self.dst_port))
                 print("sending packet # " + str(self.sequence_number))
                 self.sequence_number = self.sequence_number + 1
-                time.sleep(0.05)
+                time.sleep(0.1)
             else:
                 break
 
