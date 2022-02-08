@@ -7,7 +7,7 @@ from struct import *
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import time
-from threading import Timer
+from threading import Timer, Lock
 
 #interval timer 
 class RepeatTimer(Timer):
@@ -33,6 +33,7 @@ class Streamer:
         self.socket.bind((src_ip, src_port))
         self.dst_ip = dst_ip
         self.dst_port = dst_port
+        self.lock = Lock()
         executor = ThreadPoolExecutor(max_workers=1)
         executor.submit(self.listener)
 
@@ -57,14 +58,15 @@ class Streamer:
                             self.finack = True
                         elif packet_type == b'a': # if packet is ACK packet
                             self.acked[sequence] = True
-                            print("packet " + str(sequence) + " ACKED")
+                            self.timers[sequence].cancel()
+                            # print("packet " + str(sequence) + " ACKED")
                         elif packet_type == b'd': # packet is data packet
                             if sequence not in self.recv_buffer:
                                 self.recv_buffer[sequence] = data[35:]
                             ack_hash = hashlib.md5(str(sequence).encode() + b'a').hexdigest()
                             ack_seq = pack('H', sequence) + pack('c', b'a') + pack('32s', ack_hash.encode())
                             self.socket.sendto(ack_seq, (self.dst_ip, self.dst_port))
-                            print("sending ACK for packet #" + str(sequence))
+                            # print("sending ACK for packet #" + str(sequence))
                     else:
                         print("Corrupted packet received")
             except Exception as e:
@@ -82,25 +84,14 @@ class Streamer:
             hash = hashlib.md5(str(self.sequence_number).encode() + b'd' + chunk).hexdigest()
             chunk = pack('H', self.sequence_number) + pack('c', b'd') + pack('32s', hash.encode()) + chunk
             self.socket.sendto(chunk, (self.dst_ip, self.dst_port)) #sending a packet for the first time 
-
             self.waiting_for_ack[self.sequence_number] = chunk #i need to save this chunk in case it gets lost so i can resend it using timers 
             a_timer = RepeatTimer(.25, self.timer_got_timeout, [self.sequence_number])
-            self.timers[self.sequence_number] = a_timer #storing my timer in a dictionary 
+            self.timers[self.sequence_number] = a_timer #storing my timer in a dictionary
             a_timer.start()
-            print(self.timers)
             self.sequence_number += 1
-        time.sleep(.35) #cant solve race condition 
 
     def timer_got_timeout(self, sequence_number):
-        # while sequence_number not in self.acked:
-        #     self.socket.sendto(self.waiting_for_ack[sequence_number], (self.dst_ip, self.dst_port))
-        #     time.sleep(0.25)
-        # self.timers[sequence_number].cancel()
-        if(sequence_number in self.acked):
-            a = self.timers[sequence_number]
-            a.cancel()
-            del self.timers[sequence_number] #delete the timer from dictionary of timers
-        else:
+        with self.lock:
             self.socket.sendto(self.waiting_for_ack[sequence_number], (self.dst_ip, self.dst_port))
 
     def recv(self) -> bytes:
