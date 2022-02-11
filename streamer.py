@@ -59,6 +59,7 @@ class Streamer:
                         elif packet_type == b'a': # if packet is ACK packet
                             self.acked[sequence] = True
                             self.timers[sequence].cancel()
+                            del self.timers[sequence]
                             # print("packet " + str(sequence) + " ACKED")
                         elif packet_type == b'd': # packet is data packet
                             if sequence not in self.recv_buffer:
@@ -76,36 +77,43 @@ class Streamer:
     def send(self, data_bytes: bytes) -> None:
         """Note that data_bytes can be larger than one packet."""
         # Your code goes here!  The code below should be changed!
-        chunks = list()
-        for i in range(0, len(data_bytes), 1437):
-            chunk = data_bytes[i:i+1437]
-            chunks.append(chunk)
-        for chunk in chunks:
-            hash = hashlib.md5(str(self.sequence_number).encode() + b'd' + chunk).hexdigest()
-            chunk = pack('H', self.sequence_number) + pack('c', b'd') + pack('32s', hash.encode()) + chunk
-            self.socket.sendto(chunk, (self.dst_ip, self.dst_port)) #sending a packet for the first time 
-            self.waiting_for_ack[self.sequence_number] = chunk #i need to save this chunk in case it gets lost so i can resend it using timers 
-            a_timer = RepeatTimer(.25, self.timer_got_timeout, [self.sequence_number])
-            self.timers[self.sequence_number] = a_timer #storing my timer in a dictionary
-            a_timer.start()
-            self.sequence_number += 1
+        with self.lock:
+            chunks = list()
+            for i in range(0, len(data_bytes), 1437):
+                chunk = data_bytes[i:i+1437]
+                chunks.append(chunk)
+            for chunk in chunks:
+                hash = hashlib.md5(str(self.sequence_number).encode() + b'd' + chunk).hexdigest()
+                chunk = pack('H', self.sequence_number) + pack('c', b'd') + pack('32s', hash.encode()) + chunk
+                while len(self.timers) > 30:
+                    continue
+
+                self.waiting_for_ack[self.sequence_number] = chunk #i need to save this chunk in case it gets lost so i can resend it using timers 
+                a_timer = Timer(5, self.timer_got_timeout, [self.sequence_number])
+                self.timers[self.sequence_number] = a_timer #storing my timer in a dictionary
+                a_timer.start()
+                self.socket.sendto(chunk, (self.dst_ip, self.dst_port)) #sending a packet for the first time 
+                self.sequence_number += 1
 
     def timer_got_timeout(self, sequence_number):
-        with self.lock:
-            self.socket.sendto(self.waiting_for_ack[sequence_number], (self.dst_ip, self.dst_port))
+        self.socket.sendto(self.waiting_for_ack[sequence_number], (self.dst_ip, self.dst_port))
+        new_timer = Timer(5, self.timer_got_timeout, [sequence_number])
+        self.timers[sequence_number] = new_timer
+        new_timer.start()
+        
 
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
         # your code goes here!  The code below should be changed!
-        
-        if self.expected_sequence_number in self.recv_buffer:
-            value = b''
-            while(self.expected_sequence_number in self.recv_buffer):
-                value += self.recv_buffer[self.expected_sequence_number]
-                self.expected_sequence_number += 1
-            return value 
-        else:
-            return b''
+        with self.lock:
+            if self.expected_sequence_number in self.recv_buffer:
+                value = b''
+                while(self.expected_sequence_number in self.recv_buffer):
+                    value += self.recv_buffer[self.expected_sequence_number]
+                    self.expected_sequence_number += 1
+                return value 
+            else:
+                return b''
 
     def close(self) -> None:
         """Cleans up. It should block (wait) until the Streamer is done with all
