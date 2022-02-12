@@ -1,4 +1,4 @@
-# Reliable Streaming Network Transport Simulator
+# CS 340 Project 2
 
-by Steve Tarzia
-
+Alan Xue - jxb4833
+Kevin Zhu - ksz5381
