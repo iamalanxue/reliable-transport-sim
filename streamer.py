@@ -121,6 +121,9 @@ class Streamer:
         # your code goes here, especially after you add ACKs and retransmissions.
         
         # I need this or else it seems the ACK wasn't actually getting sent in time before the socket closed on me
+        while(len(self.timers) != 0):
+            time.sleep(1)
+            continue
         fin_hash = hashlib.md5(str(0).encode() + b'f').hexdigest()
         fin_seq = pack('H', 0) + pack('c', b'f') + pack('32s', fin_hash.encode())
         self.socket.sendto(fin_seq, (self.dst_ip, self.dst_port))
